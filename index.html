@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Shatakshi AI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#12151d;--panel:#171b26;--line:#262c3b;--text:#e9e7f1;--muted:#8c91a6;--accent:#f0b94d;--accent-ink:#2a1d00;--user:#222839}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--text);font:15px/1.5 "Instrument Sans",system-ui,sans-serif;display:flex;overflow:hidden}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.sidebar{width:264px;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;padding:14px;gap:12px;flex-shrink:0;transition:transform .2s}
+.brand{font:500 22px "Newsreader",serif;padding:4px 6px}
+.new{background:transparent;border:1px solid var(--line);border-radius:10px;padding:10px 12px;text-align:left}
+.new:hover{background:var(--user)}
+.list{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+.item{background:none;border:0;border-radius:8px;padding:9px 10px;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+.item:hover{background:var(--user);color:var(--text)}
+.item.on{background:var(--user);color:var(--text)}
+.note{font-size:12.5px;color:var(--muted);padding:6px}
+
+main{flex:1;display:flex;flex-direction:column;min-width:0;height:100%}
+.top{display:none;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line)}
+.menu{background:none;border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+#thread{flex:1;overflow-y:auto;padding:28px 18px 12px}
+.col{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:22px}
+.q{align-self:flex-end;background:var(--user);padding:10px 14px;border-radius:16px 16px 4px 16px;max-width:85%}
+.a{font:400 18px/1.7 "Newsreader",Georgia,serif;white-space:pre-wrap;max-width:68ch}
+.a.err{font:400 15px/1.5 "Instrument Sans",sans-serif;color:#ff9b8e}
+.cursor::after{content:"";display:inline-block;width:8px;height:1.05em;background:var(--accent);margin-left:2px;vertical-align:text-bottom;animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+
+.empty{margin:12vh auto 0;max-width:620px;text-align:center}
+.empty h1{font:500 38px/1.15 "Newsreader",serif;margin:0 0 10px}
+.empty p{color:var(--muted);margin:0 0 24px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.chip{background:transparent;border:1px solid var(--line);border-radius:999px;padding:8px 14px}
+.chip:hover{border-color:var(--accent)}
+
+.composer{padding:10px 18px calc(16px + env(safe-area-inset-bottom,0px))}
+.box{max-width:720px;margin:0 auto;display:flex;align-items:flex-end;gap:8px;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:8px 8px 8px 16px}
+.box:focus-within{border-color:var(--accent)}
+textarea{flex:1;background:none;border:0;color:var(--text);font:inherit;resize:none;max-height:160px;padding:8px 0;outline:none}
+textarea::placeholder{color:var(--muted)}
+.send{background:var(--accent);color:var(--accent-ink);border:0;border-radius:12px;padding:9px 16px;font-weight:600}
+.send:disabled{opacity:.4;cursor:default}
+.hint{max-width:720px;margin:8px auto 0;font-size:12.5px;color:var(--muted);text-align:center}
+
+@media (max-width:760px){
+  .sidebar{position:fixed;inset:0 auto 0 0;z-index:5;transform:translateX(-100%)}
+  .sidebar.open{transform:none}
+  .top{display:flex}
+  .empty h1{font-size:30px}
+}
+@media (prefers-reduced-motion:reduce){.cursor::after{animation:none}.sidebar{transition:none}}
+</style>
+</head>
+<body>
+<aside class="sidebar" id="sidebar">
+  <div class="brand">Shatakshi AI</div>
+  <button class="new" id="newBtn">New story</button>
+  <div class="list" id="list"></div>
+  <div class="note">Each message starts a fresh story. The model doesn’t remember earlier messages.</div>
+</aside>
+
+<main>
+  <div class="top"><button class="menu" id="menuBtn" aria-label="Open chat list">Menu</button><strong>Shatakshi AI</strong></div>
+  <div id="thread"><div class="col" id="col"></div></div>
+  <form class="composer" id="form">
+    <div class="box">
+      <textarea id="input" rows="1" placeholder="Write a short story about a dog named Max."></textarea>
+      <button class="send" id="send" type="submit">Write</button>
+    </div>
+    <div class="hint">Works best with: “Write a short story about a [animal] named [Name].”</div>
+  </form>
+</main>
+
+<script>
+// ====== CONFIG ======
+const API = "/api/chat"; // server-side proxy (api/chat.js); the HF token never reaches the browser
+const EXAMPLES = [
+  "Write a short story about a dog named Max.",
+  "Write a short story about a cat named Luna.",
+  "Tell me a story about a bunny called Benny.",
+  "Write a story about Ollie, a fox."
+];
+
+// ====== STATE ======
+let chats = [], cur = null, busy = false, abortCtl = null;
+try { chats = JSON.parse(localStorage.getItem("shatakshi_chats") || "[]"); } catch (e) {}
+const save = () => { try { localStorage.setItem("shatakshi_chats", JSON.stringify(chats.slice(0, 30))); } catch (e) {} };
+
+const $ = id => document.getElementById(id);
+const col = $("col"), input = $("input"), sendBtn = $("send"), list = $("list"), thread = $("thread");
+
+// ====== API (streaming over Gradio SSE) ======
+async function generate(msg, onText, signal) {
+  const s = await fetch(API, {
+    method: "POST", signal,
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message: msg })
+  });
+  if (!s.ok) throw new Error("Can’t reach the model right now (HTTP " + s.status + "). Try again in a minute.");
+  const reader = s.body.getReader(), dec = new TextDecoder();
+  let buf = "", last = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf("\n\n")) >= 0) {
+      const block = buf.slice(0, i); buf = buf.slice(i + 2);
+      let name = "", data = "";
+      for (const l of block.split("\n")) {
+        if (l.startsWith("event:")) name = l.slice(6).trim();
+        else if (l.startsWith("data:")) data += l.slice(5).trim();
+      }
+      if (name === "error") throw new Error(data && data !== "null" ? data : "The model returned an error. The free GPU quota may be used up; try again later.");
+      if (name === "generating" || name === "complete") {
+        try { const d = JSON.parse(data); if (d && typeof d[0] === "string") { last = d[0]; onText(last); } } catch (e) {}
+      }
+    }
+  }
+  return last;
+}
+
+// ====== RENDER ======
+function el(cls, text) { const d = document.createElement("div"); d.className = cls; if (text != null) d.textContent = text; return d; }
+
+function renderList() {
+  list.innerHTML = "";
+  chats.forEach(c => {
+    const b = document.createElement("button");
+    b.className = "item" + (c === cur ? " on" : "");
+    b.textContent = c.title;
+    b.onclick = () => { cur = c; render(); $("sidebar").classList.remove("open"); };
+    list.appendChild(b);
+  });
+}
+
+function render() {
+  col.innerHTML = "";
+  if (!cur || !cur.items.length) {
+    const e = el("empty");
+    e.innerHTML = "<h1>What story shall we write?</h1><p>Name an animal and a name. Shatakshi will write a short story.</p>";
+    const chips = el("chips");
+    EXAMPLES.forEach(t => { const b = document.createElement("button"); b.className = "chip"; b.textContent = t; b.onclick = () => send(t); chips.appendChild(b); });
+    e.appendChild(chips); col.appendChild(e);
+  } else {
+    cur.items.forEach(it => { col.appendChild(el("q", it.q)); col.appendChild(el("a", it.a)); });
+  }
+  renderList();
+  thread.scrollTop = thread.scrollHeight;
+}
+
+function setBusy(b) {
+  busy = b;
+  sendBtn.textContent = b ? "Stop" : "Write";
+  sendBtn.type = b ? "button" : "submit";
+}
+
+// ====== SEND ======
+async function send(text) {
+  text = (text || input.value).trim();
+  if (!text || busy) return;
+  if (!cur) { cur = { title: text.slice(0, 40), items: [] }; chats.unshift(cur); }
+  else if (!cur.items.length) cur.title = text.slice(0, 40);
+  input.value = ""; input.style.height = "auto";
+  const item = { q: text, a: "" };
+  cur.items.push(item);
+  render();
+  const aEl = col.lastElementChild; aEl.classList.add("cursor");
+  abortCtl = new AbortController(); setBusy(true);
+  try {
+    await generate(text, t => { item.a = t; aEl.textContent = t; thread.scrollTop = thread.scrollHeight; }, abortCtl.signal);
+    if (!item.a) { item.a = "No story came back. Try a prompt like “Write a short story about a dog named Max.”"; aEl.textContent = item.a; }
+  } catch (err) {
+    if (err.name !== "AbortError") { aEl.classList.add("err"); aEl.textContent = err.message; if (!item.a) item.a = err.message; }
+  }
+  aEl.classList.remove("cursor"); setBusy(false); abortCtl = null; save(); renderList();
+}
+
+$("form").addEventListener("submit", e => { e.preventDefault(); send(); });
+sendBtn.addEventListener("click", () => { if (busy && abortCtl) abortCtl.abort(); });
+input.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
+input.addEventListener("input", () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 160) + "px"; });
+$("newBtn").onclick = () => { cur = null; render(); $("sidebar").classList.remove("open"); input.focus(); };
+$("menuBtn").onclick = () => $("sidebar").classList.toggle("open");
+
+render();
+</script>
+</body>
+</html>
